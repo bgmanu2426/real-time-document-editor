@@ -43,13 +43,25 @@ export const GET = withDocumentPermission(
 export const POST = withDocumentPermission(
   DocumentPermission.WRITE,
   async (req, user, documentId) => {
+    console.log('🗺️ [VERSIONS API] POST request received:', {
+      documentId,
+      user: { id: user.id, email: user.email },
+    });
+    
     try {
       const body = await req.json();
+      console.log('🗺️ [VERSIONS API] Request body:', {
+        contentLength: body.content?.length,
+        commitMessage: body.commitMessage,
+        branchName: body.branchName,
+      });
+      
       const validatedData = CreateVersionSchema.parse(body);
       
       // Get current document to determine next version number
       const document = await getDocumentById(documentId);
       if (!document) {
+        console.log('❌ [VERSIONS API] Document not found:', documentId);
         return NextResponse.json(
           { success: false, error: 'Document not found' },
           { status: 404 }
@@ -57,6 +69,10 @@ export const POST = withDocumentPermission(
       }
       
       const newVersion = document.currentVersion + 1;
+      console.log('🗺️ [VERSIONS API] Creating version:', {
+        newVersion,
+        currentVersion: document.currentVersion,
+      });
       
       const version = await createDocumentVersion({
         documentId,
@@ -68,19 +84,25 @@ export const POST = withDocumentPermission(
         parentVersionId: validatedData.parentVersionId,
       });
       
+      console.log('✅ [VERSIONS API] Version created successfully:', {
+        versionId: version.id,
+        version: version.version,
+      });
+      
       return NextResponse.json({
         success: true,
         data: version,
       }, { status: 201 });
     } catch (error) {
       if (error instanceof z.ZodError) {
+        console.log('❌ [VERSIONS API] Validation error:', error.errors);
         return NextResponse.json(
           { success: false, error: 'Invalid input', details: error.errors },
           { status: 400 }
         );
       }
       
-      console.error('Error creating document version:', error);
+      console.error('❌ [VERSIONS API] Error creating document version:', error);
       return NextResponse.json(
         { success: false, error: 'Failed to create version' },
         { status: 500 }
