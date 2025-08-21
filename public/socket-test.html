@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Socket.IO Test</title>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <h1>Socket.IO Connection Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="logs"></div>
+    
+    <script>
+        const logs = document.getElementById('logs');
+        const status = document.getElementById('status');
+        
+        function addLog(message) {
+            const div = document.createElement('div');
+            div.textContent = new Date().toLocaleTimeString() + ': ' + message;
+            logs.appendChild(div);
+            console.log(message);
+        }
+        
+        addLog('🚀 Starting Socket.IO test...');
+        addLog('🌐 Connecting to: ' + window.location.origin);
+        
+        const socket = io(window.location.origin, {
+            transports: ['websocket', 'polling']
+        });
+        
+        socket.on('connect', () => {
+            addLog('✅ Connected! Socket ID: ' + socket.id);
+            status.textContent = 'Connected';
+            status.style.color = 'green';
+            
+            // Test authentication
+            socket.emit('authenticate', { userId: '999', username: 'test-user' });
+        });
+        
+        socket.on('authenticated', (data) => {
+            addLog('🔐 Authentication response: ' + JSON.stringify(data));
+        });
+        
+        socket.on('disconnect', (reason) => {
+            addLog('❌ Disconnected: ' + reason);
+            status.textContent = 'Disconnected';
+            status.style.color = 'red';
+        });
+        
+        socket.on('connect_error', (error) => {
+            addLog('🚨 Connection Error: ' + error.message);
+            status.textContent = 'Connection Error';
+            status.style.color = 'red';
+        });
+        
+        addLog('📡 Socket instance created');
+    </script>
+</body>
+</html>
