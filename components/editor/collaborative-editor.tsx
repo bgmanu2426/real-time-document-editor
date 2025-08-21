@@ -44,6 +44,8 @@ export default function CollaborativeEditor({
   const [currentVersion, setCurrentVersion] = useState(1);
   const [isApplyingRemoteOperation, setIsApplyingRemoteOperation] = useState(false);
   const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+  const [lastLocalContent, setLastLocalContent] = useState(initialContent);
+  const [cursorThrottleTimer, setCursorThrottleTimer] = useState<NodeJS.Timeout | null>(null);
   
   // Create stable references that won't change between renders
   const socketClient = useMemo(() => {
@@ -69,35 +71,59 @@ export default function CollaborativeEditor({
       
       // Only send operations if this is a user edit, not a remote operation being applied
       if (!readOnly && isConnected && !isApplyingRemoteOperation) {
-        // Clear any existing debounce timer
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-        }
-        
-        // Debounce the operation sending to prevent excessive API calls
-        const newTimer = setTimeout(() => {
-          const operation: DocumentOperation = {
-            type: 'retain',
-            position: 0,
-            content: content,
-          };
+        // Check if content actually changed from last known local content
+        if (content !== lastLocalContent) {
+          setLastLocalContent(content);
           
-          console.log('📝 Sending debounced document operation from user edit:', operation);
-          socketClient.sendDocumentOperation(stableDocumentId, operation, currentVersion);
-        }, 300); // 300ms debounce
-        
-        setDebounceTimer(newTimer);
+          // Clear any existing debounce timer
+          if (debounceTimer) {
+            clearTimeout(debounceTimer);
+          }
+          
+          // Debounce the operation sending to prevent excessive API calls
+          const newTimer = setTimeout(() => {
+            const operation: DocumentOperation = {
+              type: 'retain',
+              position: 0,
+              content: content,
+            };
+            
+            console.log('📝 Sending debounced document operation from user edit:', operation);
+            socketClient.sendDocumentOperation(stableDocumentId, operation, currentVersion);
+          }, 150); // Reduced debounce for better responsiveness
+          
+          setDebounceTimer(newTimer);
+        }
       } else if (isApplyingRemoteOperation) {
         console.log('🚫 Skipping operation send - applying remote operation');
       }
     },
     onSelectionUpdate: ({ editor }) => {
-      if (!readOnly && isConnected) {
+      if (!readOnly && isConnected && !isApplyingRemoteOperation) {
         const { from, to } = editor.state.selection;
-        socketClient.updateCursor(stableDocumentId, {
-          position: from,
-          selection: from !== to ? { start: from, end: to } : undefined,
-        });
+        
+        // Throttle cursor updates to reduce network overhead
+        if (cursorThrottleTimer) {
+          clearTimeout(cursorThrottleTimer);
+        }
+        
+        const throttleTimer = setTimeout(() => {
+          // Calculate the DOM position for cursor visualization
+          const domPos = editor.view.domAtPos(from);
+          const rect = domPos.node?.parentElement?.getBoundingClientRect?.();
+          
+          socketClient.updateCursor(stableDocumentId, {
+            position: from,
+            selection: from !== to ? { start: from, end: to } : undefined,
+            domPosition: rect ? {
+              top: rect.top,
+              left: rect.left,
+              height: rect.height || 20
+            } : undefined
+          });
+        }, 100); // Throttle cursor updates to 100ms
+        
+        setCursorThrottleTimer(throttleTimer);
       }
     },
   });
@@ -250,11 +276,34 @@ export default function CollaborativeEditor({
         setIsApplyingRemoteOperation(true);
         
         try {
-          // Apply the operation to the editor
+          // Apply the operation to the editor with cursor preservation
           // This is simplified - in production you'd use proper operational transform
           if (data.operation.type === 'retain' && data.operation.content) {
             console.log('✏️ Applying remote operation to editor');
-            editor.commands.setContent(data.operation.content);
+            
+            // Store current selection to preserve cursor position
+            const currentSelection = editor.state.selection;
+            
+            // Only apply if content is different to prevent unnecessary updates
+            const currentContent = editor.getHTML();
+            if (currentContent !== data.operation.content) {
+              // Apply the content change
+              editor.commands.setContent(data.operation.content, { emitUpdate: false });
+              
+              // Update our local content tracking
+              setLastLocalContent(data.operation.content);
+              
+              // Try to restore cursor position if it's still valid
+              setTimeout(() => {
+                const docSize = editor.state.doc.content.size;
+                if (currentSelection.from <= docSize && currentSelection.to <= docSize) {
+                  editor.commands.setTextSelection({
+                    from: currentSelection.from,
+                    to: currentSelection.to
+                  });
+                }
+              }, 10); // Small delay to ensure DOM is updated
+            }
           }
           setCurrentVersion(prev => prev + 1);
         } finally {
@@ -273,6 +322,7 @@ export default function CollaborativeEditor({
       cursor: {
         position: number;
         selection?: { start: number; end: number };
+        domPosition?: { top: number; left: number; height: number };
       };
     }) => {
       // Update cursor visualization for other users
@@ -300,14 +350,17 @@ export default function CollaborativeEditor({
     };
   }, [isConnected, editor, socketClient, userIdString, isApplyingRemoteOperation]);
 
-  // Cleanup debounce timer on unmount
+  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
       if (debounceTimer) {
         clearTimeout(debounceTimer);
       }
+      if (cursorThrottleTimer) {
+        clearTimeout(cursorThrottleTimer);
+      }
     };
-  }, [debounceTimer]);
+  }, [debounceTimer, cursorThrottleTimer]);
 
   const formatText = useCallback((format: string) => {
     if (!editor || readOnly) return;
@@ -346,14 +399,17 @@ export default function CollaborativeEditor({
   }
 
   return (
-    <div className="w-full border border-gray-200 rounded-lg overflow-hidden">
+    <div className="w-full border border-gray-200 rounded-lg overflow-hidden shadow-sm">
       {/* Connection Status & Active Users */}
       <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
           <span className="text-sm text-gray-600">
             {isConnected ? 'Connected' : 'Disconnected'}
           </span>
+          {isApplyingRemoteOperation && (
+            <span className="text-xs text-blue-600 animate-pulse">Syncing...</span>
+          )}
         </div>
         
         {activeUsers.length > 0 && (
@@ -442,29 +498,67 @@ export default function CollaborativeEditor({
 
       {/* Editor Content */}
       <div className="relative">
-        <EditorContent 
-          editor={editor} 
-          className="prose max-w-none p-4 min-h-[400px] focus:outline-none"
-        />
+        <div className="relative">
+          <EditorContent 
+            editor={editor} 
+            className="prose prose-slate max-w-none p-4 min-h-[400px] focus:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[400px] [&_.ProseMirror]:cursor-text [&_.ProseMirror]:break-words [&_.ProseMirror]:leading-relaxed [&_.ProseMirror]:resize-none [&_.ProseMirror]:focus:ring-0 [&_.ProseMirror]:border-0"
+          />
+        </div>
         
         {/* Cursor indicators for other users */}
-        {activeUsers.map((user) => (
-          user.cursor && (
+        {activeUsers.map((user) => {
+          if (!user.cursor || !editor) return null;
+          
+          // Calculate proper cursor position using TipTap's coordsAtPos
+          let cursorStyle: React.CSSProperties = {
+            display: 'none'
+          };
+          
+          try {
+            const coords = editor.view.coordsAtPos(user.cursor.position);
+            const editorRect = editor.view.dom.getBoundingClientRect();
+            
+            if (coords && editorRect) {
+              cursorStyle = {
+                position: 'absolute',
+                top: coords.top - editorRect.top,
+                left: coords.left - editorRect.left,
+                height: coords.bottom - coords.top || 20,
+                pointerEvents: 'none',
+                zIndex: 10
+              };
+            }
+          } catch (error) {
+            console.warn('Failed to calculate cursor position:', error);
+            // Fallback to stored DOM position if available
+            if (user.cursor.domPosition) {
+              const editorRect = editor.view.dom.getBoundingClientRect();
+              cursorStyle = {
+                position: 'absolute',
+                top: user.cursor.domPosition.top - editorRect.top,
+                left: user.cursor.domPosition.left - editorRect.left,
+                height: user.cursor.domPosition.height,
+                pointerEvents: 'none',
+                zIndex: 10
+              };
+            }
+          }
+          
+          return (
             <div
               key={user.userId}
-              className="absolute w-px h-5 bg-blue-500 pointer-events-none"
-              style={{
-                // This is simplified positioning - in production you'd need proper cursor positioning
-                top: '100px',
-                left: '20px',
-              }}
+              className="absolute w-0.5 bg-blue-500 pointer-events-none transition-all duration-75"
+              style={cursorStyle}
             >
-              <div className="absolute -top-6 -left-1 px-1 py-0.5 bg-blue-500 text-white text-xs rounded whitespace-nowrap">
+              <div className="absolute -top-6 -left-1 px-1.5 py-0.5 bg-blue-500 text-white text-xs rounded-md whitespace-nowrap shadow-md animate-in fade-in duration-200">
                 {user.username}
               </div>
+              {user.cursor.selection && (
+                <div className="absolute bg-blue-200 opacity-30 pointer-events-none" />
+              )}
             </div>
-          )
-        ))}
+          );
+        })}
       </div>
     </div>
   );

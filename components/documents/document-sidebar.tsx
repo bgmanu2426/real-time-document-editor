@@ -5,6 +5,7 @@ import { formatDistance } from 'date-fns';
 import type { User } from '@/lib/db/schema';
 import { DocumentPermission } from '@/lib/db/schema';
 
+
 interface Comment {
   id: string;
   content: string;
@@ -49,8 +50,11 @@ interface DocumentSidebarProps {
     canRead: boolean;
     canWrite: boolean;
     canAdmin: boolean;
-    canComment?: boolean;
-    canManageCollaborators?: boolean;
+    canComment: boolean;
+    canCreateBranch: boolean;
+    canMergeBranch: boolean;
+    canManageCollaborators: boolean;
+    canDeleteDocument: boolean;
   };
   onClose: () => void;
 }

@@ -42,8 +42,23 @@ export const GET = async (req: NextRequest, context: { params: Promise<{ id: str
     
     // Check if user can access this document
     if (!document.isPublic && (!userId || (document.ownerId !== userId && !document.permission))) {
+      const errorMessage = !userId 
+        ? 'This document is private. Please sign in to view it.'
+        : 'This document is private and you do not have permission to view it. Please contact the document owner to request access.';
+      
       return NextResponse.json(
-        { success: false, error: 'Access denied' },
+        { 
+          success: false, 
+          error: errorMessage,
+          documentInfo: {
+            title: document.title,
+            isPublic: document.isPublic,
+            owner: document.owner ? {
+              name: document.owner.name,
+              email: document.owner.email
+            } : null
+          }
+        },
         { status: 403 }
       );
     }
@@ -138,22 +153,65 @@ export const PUT = withDocumentPermission(
 );
 
 // DELETE /api/documents/[id] - Delete document
-export const DELETE = withDocumentPermission(
-  DocumentPermission.ADMIN,
-  async (req, user, documentId) => {
-    try {
-      await deleteDocument(documentId);
-      
-      return NextResponse.json({
-        success: true,
-        message: 'Document deleted successfully',
-      });
-    } catch (error) {
-      console.error('Error deleting document:', error);
+export const DELETE = async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
+  try {
+    const params = await context.params;
+    const documentId = params.id;
+    console.log('🗑️ [API] DELETE request received for document:', documentId);
+    
+    const user = await getUser();
+    console.log('👤 [API] User authentication result:', { userId: user?.id, userEmail: user?.email });
+    
+    if (!user) {
+      console.log('❌ [API] Unauthorized - no user found');
       return NextResponse.json(
-        { success: false, error: 'Failed to delete document' },
-        { status: 500 }
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
       );
     }
+    
+    // Get document details to check ownership
+    console.log('📄 [API] Fetching document details for ownership check...');
+    const document = await getDocumentWithDetails(documentId, user.id);
+    
+    if (!document) {
+      console.log('❌ [API] Document not found:', documentId);
+      return NextResponse.json(
+        { success: false, error: 'Document not found' },
+        { status: 404 }
+      );
+    }
+    
+    console.log('📋 [API] Document details:', { 
+      documentId: document.id, 
+      documentTitle: document.title, 
+      ownerId: document.ownerId, 
+      userId: user.id,
+      isOwner: document.ownerId === user.id 
+    });
+    
+    // Only the owner can delete the document
+    if (document.ownerId !== user.id) {
+      console.log('❌ [API] Permission denied - user is not the owner');
+      return NextResponse.json(
+        { success: false, error: 'Only the document owner can delete this document' },
+        { status: 403 }
+      );
+    }
+    
+    console.log('🔥 [API] Proceeding with document deletion...');
+    await deleteDocument(documentId);
+    console.log('✅ [API] Document deleted successfully from database');
+    
+    return NextResponse.json({
+      success: true,
+      message: 'Document deleted successfully',
+    });
+  } catch (error) {
+    console.error('💥 [API] Error deleting document:', error);
+    return NextResponse.json(
+      { success: false, error: 'Failed to delete document' },
+      { status: 500 }
+    );
   }
-);
+};

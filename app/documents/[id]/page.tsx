@@ -11,16 +11,16 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   const document = await getDocumentWithDetails(id, user?.id);
   
   if (!document) {
-    redirect('/documents');
+    redirect(`/documents/${id}/access-denied?reason=not-found`);
   }
 
   // Check permissions - allow public documents for anonymous users
   if (!document.isPublic) {
     if (!user) {
-      redirect('/sign-in');
+      redirect(`/documents/${id}/access-denied?reason=login-required`);
     }
     if (document.ownerId !== user.id && !document.permission) {
-      redirect('/documents');
+      redirect(`/documents/${id}/access-denied?reason=access-denied`);
     }
   }
 
