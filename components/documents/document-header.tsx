@@ -6,6 +6,7 @@ import { formatDistance } from 'date-fns';
 import type { User } from '@/lib/db/schema';
 import { DocumentPermission } from '@/lib/db/schema';
 
+
 interface DocumentHeaderProps {
   document: {
     id: string;
@@ -28,6 +29,11 @@ interface DocumentHeaderProps {
     canRead: boolean;
     canWrite: boolean;
     canAdmin: boolean;
+    canComment: boolean;
+    canCreateBranch: boolean;
+    canMergeBranch: boolean;
+    canManageCollaborators: boolean;
+    canDeleteDocument: boolean;
   };
   isSaving: boolean;
   lastSaved: Date | null;
@@ -51,6 +57,8 @@ export default function DocumentHeader({
   const [collaboratorEmail, setCollaboratorEmail] = useState('');
   const [collaboratorPermission, setCollaboratorPermission] = useState('write');
   const [isAddingCollaborator, setIsAddingCollaborator] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -95,23 +103,45 @@ export default function DocumentHeader({
     setShowDropdownMenu(!showDropdownMenu);
   };
 
-  const handleDeleteDocument = async () => {
-    if (confirm('Are you sure you want to delete this document? This action cannot be undone.')) {
-      try {
-        const response = await fetch(`/api/documents/${document.id}`, {
-          method: 'DELETE',
-        });
-        if (response.ok) {
-          window.location.href = '/documents';
-        } else {
-          alert('Failed to delete document');
-        }
-      } catch (error) {
-        console.error('Error deleting document:', error);
-        alert('Failed to delete document');
-      }
-    }
+  const handleDeleteDocument = () => {
+    console.log('🖱️ Delete button clicked for document:', { documentId: document.id, documentTitle: document.title });
+    setShowDeleteConfirmation(true);
     setShowDropdownMenu(false);
+  };
+
+  const confirmDeleteDocument = async () => {
+    console.log('🗑️ Starting document deletion process...', { documentId: document.id, documentTitle: document.title });
+    setIsDeleting(true);
+    try {
+      console.log('📡 Sending DELETE request to API...');
+      const response = await fetch(`/api/documents/${document.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      console.log('📨 Received API response:', { status: response.status, statusText: response.statusText });
+      const data = await response.json();
+      console.log('📄 API response data:', data);
+      
+      if (response.ok) {
+        console.log('✅ Document deleted successfully! Redirecting to documents page...');
+        // Redirect to documents page
+        window.location.href = '/documents';
+      } else {
+        console.error('❌ Delete failed with response:', { status: response.status, data });
+        // Show specific error message from server
+        alert(data.error || 'Failed to delete document');
+      }
+    } catch (error) {
+      console.error('💥 Network or other error during delete:', error);
+      alert('Failed to delete document. Please check your connection and try again.');
+    } finally {
+      console.log('🏁 Delete process completed, cleaning up state...');
+      setIsDeleting(false);
+      setShowDeleteConfirmation(false);
+    }
   };
 
   const handleAddCollaborator = async () => {
@@ -306,7 +336,7 @@ export default function DocumentHeader({
                       </svg>
                       Export as Text
                     </button>
-                    {permissions.canAdmin && (
+                    {permissions.canDeleteDocument && (
                       <>
                         <div className="border-t border-gray-100 my-1"></div>
                         <button
@@ -444,6 +474,72 @@ export default function DocumentHeader({
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-medium text-gray-900">Delete Document</h3>
+              <button
+                onClick={() => setShowDeleteConfirmation(false)}
+                className="text-gray-400 hover:text-gray-600"
+                disabled={isDeleting}
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="mb-6">
+              <div className="flex items-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center mr-3">
+                  <svg className="w-6 h-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Are you sure you want to delete this document?</p>
+                  <p className="text-sm text-gray-500 mt-1">This action cannot be undone. The document and all its content will be permanently deleted.</p>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 rounded-md p-3">
+                <p className="text-sm font-medium text-gray-700">Document: {document.title}</p>
+                <p className="text-xs text-gray-500 mt-1">Created {new Date(document.createdAt).toLocaleDateString()}</p>
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirmation(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteDocument}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              >
+                {isDeleting ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete Document'
+                )}
+              </button>
             </div>
           </div>
         </div>
