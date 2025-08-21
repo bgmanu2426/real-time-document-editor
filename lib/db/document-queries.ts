@@ -52,7 +52,7 @@ export async function getDocumentById(id: string) {
   const [document] = await db
     .select()
     .from(documents)
-    .where(eq(documents.id, id))
+    .where(and(eq(documents.id, id), sql`${documents.deletedAt} IS NULL`))
     .limit(1);
   
   return document;
@@ -77,7 +77,7 @@ export async function getDocumentWithDetails(id: string, userId?: number) {
     })
     .from(documents)
     .leftJoin(users, eq(documents.ownerId, users.id))
-    .where(eq(documents.id, id))
+    .where(and(eq(documents.id, id), sql`${documents.deletedAt} IS NULL`))
     .limit(1);
 
   if (!document[0]) return null;
@@ -114,7 +114,7 @@ export async function getUserDocuments(userId: number) {
   const ownedDocs = await db
     .select()
     .from(documents)
-    .where(eq(documents.ownerId, userId))
+    .where(and(eq(documents.ownerId, userId), sql`${documents.deletedAt} IS NULL`))
     .orderBy(desc(documents.updatedAt));
 
   // Get collaborated documents
@@ -132,7 +132,7 @@ export async function getUserDocuments(userId: number) {
     })
     .from(documentCollaborators)
     .leftJoin(documents, eq(documentCollaborators.documentId, documents.id))
-    .where(eq(documentCollaborators.userId, userId))
+    .where(and(eq(documentCollaborators.userId, userId), sql`${documents.deletedAt} IS NULL`))
     .orderBy(desc(documents.updatedAt));
 
   return {
@@ -152,10 +152,16 @@ export async function updateDocument(id: string, updates: Partial<Document>) {
 }
 
 export async function deleteDocument(id: string) {
+  console.log('🗄️ [DB] Starting soft delete for document:', id);
+  const deletedAt = new Date();
+  console.log('⏰ [DB] Setting deletedAt timestamp:', deletedAt.toISOString());
+  
   await db
     .update(documents)
-    .set({ deletedAt: new Date() })
+    .set({ deletedAt })
     .where(eq(documents.id, id));
+    
+  console.log('✅ [DB] Document soft delete completed for:', id);
 }
 
 // Version control operations

@@ -1,8 +1,14 @@
-# ShareSpace - Content Sharing Platform Environment Configuration
-# This file configures the development environment for the Next.js sharing application
+# Real-Time Collaborative Document Platform Environment Configuration
+# This file configures the development environment for the Next.js collaborative document platform
 
 # Command to install or update dependencies, will execute each time a new thread created to ensure dependencies up-to-date
 dependency_command: npm install
 
 # Command to run when "Run" button clicked
 run_command: npm run dev
+
+# Linter configuration for code quality checking
+linter_config:
+  - config_path: 'tsconfig.json'
+    type: 'typescript'
+    language: 'typescript'

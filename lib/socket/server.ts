@@ -159,6 +159,7 @@ export class CollaborativeSocketServer {
         cursor: {
           position: number;
           selection?: { start: number; end: number };
+          domPosition?: { top: number; left: number; height: number };
         };
       }) => {
         if (!socket.data?.userId) return;
@@ -252,7 +253,7 @@ export class CollaborativeSocketServer {
   private async updateUserCursor(
     documentId: string,
     userId: string,
-    cursor: { position: number; selection?: { start: number; end: number } }
+    cursor: { position: number; selection?: { start: number; end: number }; domPosition?: { top: number; left: number; height: number } }
   ) {
     const key = `document:${documentId}:users`;
     const userStr = await this.redisClient.hGet(key, userId);

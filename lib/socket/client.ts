@@ -49,6 +49,7 @@ export interface SocketEvents {
     cursor: {
       position: number;
       selection?: { start: number; end: number };
+      domPosition?: { top: number; left: number; height: number };
     };
   }) => void;
   
@@ -234,6 +235,7 @@ export class CollaborativeSocketClient {
   updateCursor(documentId: string, cursor: {
     position: number;
     selection?: { start: number; end: number };
+    domPosition?: { top: number; left: number; height: number };
   }) {
     if (!this.socket || !this.isAuthenticated) return;
 
