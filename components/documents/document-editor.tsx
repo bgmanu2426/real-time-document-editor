@@ -7,6 +7,7 @@ import DocumentSidebar from './document-sidebar';
 import type { User } from '@/lib/db/schema';
 import { DocumentPermission } from '@/lib/db/schema';
 
+
 interface DocumentEditorProps {
   document: {
     id: string;
@@ -38,11 +39,17 @@ export default function DocumentEditor({ document, user }: DocumentEditorProps) 
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [saveTimer, setSaveTimer] = useState<NodeJS.Timeout | null>(null);
 
-  // Determine user permissions
+  // Determine user permissions (client-side)
+  const isOwner = user ? document.ownerId === user.id : false;
   const permissions = {
     canRead: true,
-    canWrite: user ? (document.ownerId === user.id || document.permission === DocumentPermission.WRITE || document.permission === DocumentPermission.ADMIN) : false,
-    canAdmin: user ? (document.ownerId === user.id || document.permission === DocumentPermission.ADMIN) : false,
+    canWrite: user ? (isOwner || document.permission === DocumentPermission.WRITE || document.permission === DocumentPermission.ADMIN) : false,
+    canAdmin: user ? (isOwner || document.permission === DocumentPermission.ADMIN) : false,
+    canComment: user ? true : false,
+    canCreateBranch: user ? (isOwner || document.permission === DocumentPermission.WRITE || document.permission === DocumentPermission.ADMIN) : false,
+    canMergeBranch: user ? (isOwner || document.permission === DocumentPermission.WRITE || document.permission === DocumentPermission.ADMIN) : false,
+    canManageCollaborators: user ? (isOwner || document.permission === DocumentPermission.ADMIN) : false,
+    canDeleteDocument: isOwner, // Only owner can delete
   };
 
   const saveDocumentContent = async (content: string) => {
