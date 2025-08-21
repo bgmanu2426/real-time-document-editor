@@ -25,7 +25,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       <Suspense fallback={<DocumentEditorSkeleton />}>
         <DocumentEditor 
           document={document}
@@ -38,23 +38,23 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
 
 function DocumentEditorSkeleton() {
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-screen flex flex-col bg-background">
       {/* Header skeleton */}
-      <div className="border-b border-gray-200 bg-white px-6 py-4">
+      <div className="border-b border-border bg-background px-6 py-4">
         <div className="animate-pulse">
-          <div className="h-6 bg-gray-200 rounded w-1/3 mb-2"></div>
-          <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+          <div className="h-6 bg-muted rounded w-1/3 mb-2"></div>
+          <div className="h-4 bg-muted rounded w-1/4"></div>
         </div>
       </div>
       
       {/* Editor skeleton */}
       <div className="flex-1 p-6">
         <div className="animate-pulse space-y-4">
-          <div className="h-4 bg-gray-200 rounded w-full"></div>
-          <div className="h-4 bg-gray-200 rounded w-5/6"></div>
-          <div className="h-4 bg-gray-200 rounded w-4/6"></div>
-          <div className="h-4 bg-gray-200 rounded w-full"></div>
-          <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+          <div className="h-4 bg-muted rounded w-full"></div>
+          <div className="h-4 bg-muted rounded w-5/6"></div>
+          <div className="h-4 bg-muted rounded w-4/6"></div>
+          <div className="h-4 bg-muted rounded w-full"></div>
+          <div className="h-4 bg-muted rounded w-3/4"></div>
         </div>
       </div>
     </div>

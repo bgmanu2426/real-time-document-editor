@@ -11,13 +11,34 @@ export interface AuthenticatedUser {
 }
 
 export async function requireAuth(): Promise<AuthenticatedUser | null> {
+  console.log('🔑 [AUTH] Attempting to get session...');
   const session = await getSession();
-  if (!session) return null;
+  
+  console.log('🔑 [AUTH] Session result:', {
+    hasSession: !!session,
+    userId: session?.user?.id,
+  });
+  
+  if (!session) {
+    console.log('❌ [AUTH] No session found');
+    return null;
+  }
 
   // Fetch fresh user data from database
+  console.log('🔑 [AUTH] Fetching user data from database...');
   const user = await getUserById(session.user.id);
-  if (!user) return null;
+  
+  console.log('🔑 [AUTH] User data result:', {
+    hasUser: !!user,
+    userEmail: user?.email,
+  });
+  
+  if (!user) {
+    console.log('❌ [AUTH] User not found in database');
+    return null;
+  }
 
+  console.log('✅ [AUTH] Authentication successful');
   return {
     id: user.id,
     email: user.email,
@@ -29,14 +50,28 @@ export async function requireDocumentPermission(
   documentId: string,
   requiredPermission: DocumentPermission
 ): Promise<{ user: AuthenticatedUser; hasPermission: boolean } | null> {
+  console.log('📄 [PERMISSION] Checking document permission:', {
+    documentId,
+    requiredPermission,
+  });
+  
   const user = await requireAuth();
-  if (!user) return null;
+  if (!user) {
+    console.log('❌ [PERMISSION] No authenticated user found');
+    return null;
+  }
 
+  console.log('📄 [PERMISSION] User authenticated, checking document access...');
   const hasPermission = await checkDocumentPermission(
     documentId,
     user.id,
     requiredPermission
   );
+
+  console.log('📄 [PERMISSION] Permission check complete:', {
+    userId: user.id,
+    hasPermission,
+  });
 
   return { user, hasPermission };
 }
@@ -58,16 +93,35 @@ export function withDocumentPermission(
   return async (req: NextRequest, context: { params: Promise<{ id: string }> }) => {
     const params = await context.params;
     const documentId = params.id;
+    
+    console.log('🔐 [AUTH] Checking document permission:', {
+      documentId,
+      requiredPermission,
+      method: req.method,
+    });
+    
     const result = await requireDocumentPermission(documentId, requiredPermission);
     
+    console.log('🔐 [AUTH] Permission check result:', {
+      hasResult: !!result,
+      hasPermission: result?.hasPermission,
+      user: result?.user ? { id: result.user.id, email: result.user.email } : null,
+    });
+    
     if (!result) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      console.log('❌ [AUTH] No result - returning 401 Unauthorized');
+      return NextResponse.json({ 
+        error: 'Unauthorized', 
+        debug: 'Authentication failed - no session or user found' 
+      }, { status: 401 });
     }
 
     if (!result.hasPermission) {
+      console.log('❌ [AUTH] Insufficient permissions - returning 403 Forbidden');
       return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
     }
 
+    console.log('✅ [AUTH] Permission granted - proceeding to handler');
     return handler(req, result.user, documentId);
   };
 }
