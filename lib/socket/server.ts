@@ -29,9 +29,20 @@ export class CollaborativeSocketServer {
   constructor(httpServer: HTTPServer) {
     this.io = new SocketIOServer(httpServer, {
       cors: {
-        origin: process.env.BASE_URL || "http://localhost:3000",
-        methods: ["GET", "POST"]
-      }
+        origin: [
+          "http://localhost:3000",
+          "https://localhost:3000",
+          "http://127.0.0.1:3000",
+          "https://127.0.0.1:3000",
+          /.*\.clackypaas\.com$/,  // Match any subdomain of clackypaas.com
+          process.env.BASE_URL || "http://localhost:3000"
+        ].filter(Boolean), // Remove any undefined values
+        methods: ["GET", "POST"],
+        credentials: true
+      },
+      // Add transport options for better Clacky compatibility
+      transports: ['websocket', 'polling'],
+      allowEIO3: true  // Allow Engine.IO v3 clients
     });
 
     // Initialize Redis clients
@@ -160,6 +171,7 @@ export class CollaborativeSocketServer {
           position: number;
           selection?: { start: number; end: number };
           domPosition?: { top: number; left: number; height: number };
+          relativePosition?: { top: number; left: number; height: number; contentOffsetTop?: number; contentOffsetLeft?: number; scrollTop?: number; scrollLeft?: number };
         };
       }) => {
         if (!socket.data?.userId) return;
@@ -171,6 +183,31 @@ export class CollaborativeSocketServer {
           username: socket.data.username,
           cursor: data.cursor
         });
+      });
+
+      // Document title updates
+      socket.on('title-update', async (data: {
+        documentId: string;
+        title: string;
+      }) => {
+        if (!socket.data?.userId) return;
+
+        try {
+          // Update title in database
+          await this.updateDocumentTitle(data.documentId, data.title);
+
+          // Broadcast title change to all users in the document except sender
+          socket.to(`document:${data.documentId}`).emit('title-updated', {
+            title: data.title,
+            userId: socket.data.userId,
+            timestamp: Date.now()
+          });
+        } catch (error) {
+          console.error('Error updating document title:', error);
+          socket.emit('title-update-error', {
+            error: 'Failed to update document title'
+          });
+        }
       });
 
       // Version control operations
@@ -253,7 +290,7 @@ export class CollaborativeSocketServer {
   private async updateUserCursor(
     documentId: string,
     userId: string,
-    cursor: { position: number; selection?: { start: number; end: number }; domPosition?: { top: number; left: number; height: number } }
+    cursor: { position: number; selection?: { start: number; end: number }; domPosition?: { top: number; left: number; height: number }; relativePosition?: { top: number; left: number; height: number; contentOffsetTop?: number; contentOffsetLeft?: number; scrollTop?: number; scrollLeft?: number } }
   ) {
     const key = `document:${documentId}:users`;
     const userStr = await this.redisClient.hGet(key, userId);
@@ -373,6 +410,30 @@ export class CollaborativeSocketServer {
     };
 
     return mergeResult;
+  }
+
+  // Document title management  
+  private async updateDocumentTitle(documentId: string, title: string) {
+    try {
+      // Store title update in Redis for real-time sync
+      // In a production app, this would also update the database
+      const key = `document:${documentId}:metadata`;
+      const metadata = {
+        title,
+        updatedAt: Date.now()
+      };
+      
+      await this.redisClient.hSet(key, 'title', JSON.stringify(metadata));
+      await this.redisClient.expire(key, 86400); // 24 hour TTL
+      
+      console.log('✅ Document title cached in Redis for real-time sync:', { documentId, title });
+      
+      // Note: Database persistence is handled by the fallback API call in the client
+      // This ensures real-time sync while maintaining data persistence
+    } catch (error) {
+      console.error('❌ Error updating document title in Redis:', error);
+      throw error;
+    }
   }
 
   public getIO() {

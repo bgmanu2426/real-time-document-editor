@@ -15,7 +15,7 @@ interface AccessDeniedState {
   isOpen: boolean;
   documentInfo: DocumentInfo | null;
   reason: 'not-found' | 'login-required' | 'access-denied';
-  documentId: string | null;
+  documentId: string | undefined;
 }
 
 export function useDocumentAccess() {
@@ -23,7 +23,7 @@ export function useDocumentAccess() {
     isOpen: false,
     documentInfo: null,
     reason: 'access-denied',
-    documentId: null,
+    documentId: undefined,
   });
 
   const showAccessDenied = useCallback((

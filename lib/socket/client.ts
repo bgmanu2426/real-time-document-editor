@@ -50,6 +50,7 @@ export interface SocketEvents {
       position: number;
       selection?: { start: number; end: number };
       domPosition?: { top: number; left: number; height: number };
+      relativePosition?: { top: number; left: number; height: number; contentOffsetTop?: number; contentOffsetLeft?: number; scrollTop?: number; scrollLeft?: number };
     };
   }) => void;
   
@@ -57,6 +58,10 @@ export interface SocketEvents {
   'branch-created': (branch: any) => void;
   'branch-merged': (result: any) => void;
   'merge-conflict': (data: { error: string; conflicts: any[] }) => void;
+  
+  // Title updates
+  'title-updated': (data: { title: string; userId: string; timestamp: number }) => void;
+  'title-update-error': (data: { error: string }) => void;
   
   // Errors
   error: (data: { message: string }) => void;
@@ -88,7 +93,18 @@ export class CollaborativeSocketClient {
     });
     
     this.socket = io(baseUrl, {
-      transports: ['websocket', 'polling']
+      transports: ['websocket', 'polling'],
+      upgrade: true,
+      rememberUpgrade: true,
+      timeout: 20000,
+      forceNew: false,
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      maxReconnectionAttempts: 5,
+      withCredentials: true,
+      autoConnect: true
     });
 
     console.log('✅ SOCKET INIT: Socket instance created successfully');
@@ -108,6 +124,31 @@ export class CollaborativeSocketClient {
       this.isAuthenticated = false;
     });
 
+    this.socket.on('connect_error', (error) => {
+      console.error('🔥 Socket.IO connection error:', error.message);
+      console.error('🔥 Error details:', {
+        description: error.description,
+        context: error.context,
+        type: error.type
+      });
+    });
+
+    this.socket.on('reconnect', (attemptNumber) => {
+      console.log('🔄 Reconnected to server after', attemptNumber, 'attempts');
+    });
+
+    this.socket.on('reconnect_attempt', (attemptNumber) => {
+      console.log('🔄 Attempting to reconnect... attempt #', attemptNumber);
+    });
+
+    this.socket.on('reconnect_error', (error) => {
+      console.error('❌ Reconnection failed:', error.message);
+    });
+
+    this.socket.on('reconnect_failed', () => {
+      console.error('❌ Failed to reconnect after maximum attempts');
+    });
+
     this.socket.on('authenticated', (data: { success: boolean }) => {
       this.isAuthenticated = data.success;
       console.log('🔐 Authentication:', this.isAuthenticated ? 'success' : 'failed');
@@ -124,6 +165,8 @@ export class CollaborativeSocketClient {
       'branch-created',
       'branch-merged',
       'merge-conflict',
+      'title-updated',
+      'title-update-error',
       'error'
     ];
 
@@ -236,6 +279,7 @@ export class CollaborativeSocketClient {
     position: number;
     selection?: { start: number; end: number };
     domPosition?: { top: number; left: number; height: number };
+    relativePosition?: { top: number; left: number; height: number; contentOffsetTop?: number; contentOffsetLeft?: number; scrollTop?: number; scrollLeft?: number };
   }) {
     if (!this.socket || !this.isAuthenticated) return;
 
@@ -263,6 +307,19 @@ export class CollaborativeSocketClient {
       documentId,
       sourceBranch,
       targetBranch
+    });
+  }
+
+  // Document title updates
+  updateDocumentTitle(documentId: string, title: string) {
+    if (!this.socket || !this.isAuthenticated) {
+      console.warn('Cannot update title: Socket not connected or not authenticated');
+      return;
+    }
+
+    this.socket.emit('title-update', {
+      documentId,
+      title
     });
   }
 
