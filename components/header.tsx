@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState, Suspense } from 'react';
 import { Button } from '@/components/ui/button';
-import { CircleIcon, LogOut, User as UserIcon } from 'lucide-react';
+import { LogOut, User as UserIcon } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,27 +16,12 @@ import { signOut } from '@/app/(login)/actions';
 import { useRouter } from 'next/navigation';
 import { User } from '@/lib/db/schema';
 import useSWR, { mutate } from 'swr';
-import ThemeControls from './theme-controls';
+
 import { siteConfig } from '@/lib/config';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
-function AuthenticatedNav() {
-  const { data: user } = useSWR<User>('/api/user', fetcher);
 
-  if (!user) return null;
-
-  return (
-    <nav className="flex items-center space-x-6">
-      <Link 
-        href="/documents" 
-        className="text-sm font-medium text-foreground hover:text-primary transition-colors"
-      >
-        Documents
-      </Link>
-    </nav>
-  );
-}
 
 function UserMenu() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -101,12 +86,10 @@ export default function Header() {
     <header className="border-b border-border bg-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
         <Link href="/" className="flex items-center">
-          <CircleIcon className="h-6 w-6 text-primary" />
+          <img src="/favicon.ico" alt="ReDocz" className="h-6 w-6" />
           <span className="ml-2 text-xl font-semibold text-foreground">{siteConfig.name}</span>
         </Link>
         <div className="flex items-center space-x-4">
-          <AuthenticatedNav />
-          <ThemeControls />
           <Suspense fallback={<div className="h-9" />}>
             <UserMenu />
           </Suspense>

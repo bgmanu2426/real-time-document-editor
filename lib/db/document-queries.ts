@@ -431,18 +431,45 @@ export async function checkDocumentPermission(
   userId: number,
   requiredPermission: DocumentPermission
 ): Promise<boolean> {
+  console.log('🔍 [PERMISSION CHECK] Starting permission check:', {
+    documentId,
+    userId,
+    requiredPermission,
+  });
+  
   const document = await getDocumentById(documentId);
-  if (!document) return false;
+  if (!document) {
+    console.log('❌ [PERMISSION CHECK] Document not found');
+    return false;
+  }
+
+  console.log('🔍 [PERMISSION CHECK] Document info:', {
+    ownerId: document.ownerId,
+    isPublic: document.isPublic,
+    isOwner: document.ownerId === userId,
+  });
 
   // Owner has all permissions
-  if (document.ownerId === userId) return true;
-
-  // Check if it's a public document and only read access is required
-  if (document.isPublic && requiredPermission === DocumentPermission.READ) {
+  if (document.ownerId === userId) {
+    console.log('✅ [PERMISSION CHECK] User is owner - access granted');
     return true;
   }
 
-  // Check collaborator permissions
+  // For public documents, allow read access to anyone
+  if (document.isPublic && requiredPermission === DocumentPermission.READ) {
+    console.log('✅ [PERMISSION CHECK] Public document read access - granted');
+    return true;
+  }
+
+  // For public documents, allow authenticated users to have write access
+  // This matches the behavior of the collaborative editor
+  if (document.isPublic && requiredPermission === DocumentPermission.WRITE) {
+    console.log('✅ [PERMISSION CHECK] Public document write access granted to authenticated user');
+    return true;
+  }
+
+  // Check collaborator permissions for private documents or admin access
+  console.log('🔍 [PERMISSION CHECK] Checking collaborator permissions...');
   const [collaborator] = await db
     .select()
     .from(documentCollaborators)
@@ -454,11 +481,26 @@ export async function checkDocumentPermission(
     )
     .limit(1);
 
-  if (!collaborator) return false;
+  if (!collaborator) {
+    console.log('❌ [PERMISSION CHECK] User is not a collaborator');
+    return false;
+  }
+
+  console.log('🔍 [PERMISSION CHECK] Collaborator found:', {
+    collaboratorPermission: collaborator.permission,
+  });
 
   const permissions = [DocumentPermission.READ, DocumentPermission.WRITE, DocumentPermission.ADMIN];
   const userLevel = permissions.indexOf(collaborator.permission as DocumentPermission);
   const requiredLevel = permissions.indexOf(requiredPermission);
 
-  return userLevel >= requiredLevel;
+  const hasPermission = userLevel >= requiredLevel;
+  
+  console.log('🔍 [PERMISSION CHECK] Final result:', {
+    userLevel,
+    requiredLevel,
+    hasPermission,
+  });
+
+  return hasPermission;
 }
