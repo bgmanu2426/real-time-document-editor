@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function CreateDocumentButton() {
@@ -8,7 +8,28 @@ export default function CreateDocumentButton() {
   const [showModal, setShowModal] = useState(false);
   const [title, setTitle] = useState('');
   const [isPublic, setIsPublic] = useState(false);
+  const [user, setUser] = useState(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const router = useRouter();
+
+  // Check authentication status on component mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('/api/user');
+        if (response.ok) {
+          const userData = await response.json();
+          setUser(userData);
+        }
+      } catch (error) {
+        console.error('Error checking authentication:', error);
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    };
+
+    checkAuth();
+  }, []);
 
   const handleCreate = async () => {
     if (!title.trim()) return;
@@ -31,10 +52,26 @@ export default function CreateDocumentButton() {
         const result = await response.json();
         router.push(`/documents/${result.data.id}`);
       } else {
-        console.error('Failed to create document');
+        const errorData = await response.json().catch(() => ({}));
+        
+        if (response.status === 401) {
+          alert('Please sign in to create documents.');
+          router.push('/sign-in');
+          return;
+        } else if (response.status === 403) {
+          alert('You do not have permission to create documents.');
+        } else {
+          alert(`Failed to create document: ${errorData.error || 'Unknown error'}`);
+        }
+        
+        console.error('Failed to create document:', {
+          status: response.status,
+          error: errorData,
+        });
       }
     } catch (error) {
       console.error('Error creating document:', error);
+      alert('An unexpected error occurred while creating the document. Please try again.');
     } finally {
       setIsCreating(false);
       setShowModal(false);
@@ -46,8 +83,16 @@ export default function CreateDocumentButton() {
   return (
     <>
       <button
-        onClick={() => setShowModal(true)}
-        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        onClick={() => {
+          if (!user) {
+            alert('Please sign in to create documents.');
+            router.push('/sign-in');
+            return;
+          }
+          setShowModal(true);
+        }}
+        disabled={isCheckingAuth}
+        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <svg
           className="-ml-1 mr-2 h-5 w-5"
@@ -62,7 +107,7 @@ export default function CreateDocumentButton() {
             d="M12 4v16m8-8H4"
           />
         </svg>
-        New Document
+        {isCheckingAuth ? 'Loading...' : user ? 'New Document' : 'Sign In to Create'}
       </button>
 
       {/* Modal */}

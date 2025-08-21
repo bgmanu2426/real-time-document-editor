@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
-export type ThemeMode = 'light' | 'dark';
+export type ThemeMode = 'light';
 
 export interface ThemeColor {
   name: string;
@@ -41,7 +41,6 @@ export const themeColors: ThemeColor[] = [
 interface ThemeContextType {
   mode: ThemeMode;
   themeColor: ThemeColor;
-  toggleMode: () => void;
   setThemeColor: (color: ThemeColor) => void;
 }
 
@@ -60,22 +59,13 @@ interface ThemeProviderProps {
 }
 
 export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
-  const [mode, setMode] = useState<ThemeMode>('light');
+  const mode: ThemeMode = 'light'; // Fixed to light mode only
   const [themeColor, setThemeColorState] = useState<ThemeColor>(themeColors[0]);
   const [mounted, setMounted] = useState(false);
 
-  // Load theme preferences from localStorage
+  // Load theme color preference from localStorage
   useEffect(() => {
-    const savedMode = localStorage.getItem('theme-mode') as ThemeMode;
     const savedColor = localStorage.getItem('theme-color');
-    
-    if (savedMode) {
-      setMode(savedMode);
-    } else {
-      // Check system preference
-      const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setMode(systemDark ? 'dark' : 'light');
-    }
     
     if (savedColor) {
       const color = themeColors.find(c => c.value === savedColor);
@@ -91,6 +81,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     const initialColor = savedColor ? themeColors.find(c => c.value === savedColor) || themeColors[0] : themeColors[0];
     root.style.setProperty('--primary', initialColor.primary);
     root.style.setProperty('--primary-foreground', initialColor.primaryForeground);
+    
+    // Ensure light mode is always applied
+    root.classList.remove('dark');
   }, []); 
 
   // Apply theme changes to document
@@ -99,25 +92,21 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
     const root = document.documentElement;
     
-    // Apply dark/light mode
-    if (mode === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
+    // Ensure light mode is always applied
+    root.classList.remove('dark');
     
     // Apply theme color as CSS variables
     root.style.setProperty('--primary', themeColor.primary);
     root.style.setProperty('--primary-foreground', themeColor.primaryForeground);
     
-    // Save to localStorage
-    localStorage.setItem('theme-mode', mode);
+    // Save theme color to localStorage
     localStorage.setItem('theme-color', themeColor.value);
-  }, [mode, themeColor, mounted]);
+    
+    // Remove any stored theme mode to prevent confusion
+    localStorage.removeItem('theme-mode');
+  }, [themeColor, mounted]);
 
-  const toggleMode = () => {
-    setMode(prev => prev === 'light' ? 'dark' : 'light');
-  };
+
 
   const setThemeColor = (color: ThemeColor) => {
     setThemeColorState(color);
@@ -129,7 +118,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   }
 
   return (
-    <ThemeContext.Provider value={{ mode, themeColor, toggleMode, setThemeColor }}>
+    <ThemeContext.Provider value={{ mode, themeColor, setThemeColor }}>
       {children}
     </ThemeContext.Provider>
   );
