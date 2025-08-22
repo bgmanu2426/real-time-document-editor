@@ -39,9 +39,6 @@ next-env.d.ts
 # Docker
 postgres_data/
 .env*.local
-
-# Clacky-related configuration
-.clackyai/
 *.log
 temp/
 tmp/

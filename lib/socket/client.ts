@@ -80,7 +80,6 @@ export class CollaborativeSocketClient {
   private initializeSocket() {
     if (typeof window === 'undefined') return; // Server-side check
 
-    // Use the current window location origin for Clacky environment compatibility
     const baseUrl = typeof window !== 'undefined' 
       ? window.location.origin 
       : (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000');

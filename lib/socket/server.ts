@@ -35,7 +35,6 @@ export class CollaborativeSocketServer {
         methods: ["GET", "POST"],
         credentials: true
       },
-      // Add transport options for better Clacky compatibility
       transports: ['websocket', 'polling'],
       allowEIO3: true  // Allow Engine.IO v3 clients
     });
