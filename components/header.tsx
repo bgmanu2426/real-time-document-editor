@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, Suspense } from 'react';
+import { useState, Suspense, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { LogOut, User as UserIcon } from 'lucide-react';
 import {
@@ -25,8 +25,47 @@ const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 function UserMenu() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { data: user } = useSWR<User>('/api/user', fetcher);
+  const { data: user, error, mutate: mutateUser, isLoading } = useSWR<User>('/api/user', fetcher, {
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+    errorRetryCount: 1,
+    errorRetryInterval: 500,
+    refreshInterval: 1000, // Check every second for auth changes
+    shouldRetryOnError: false,
+    dedupingInterval: 500,
+  });
   const router = useRouter();
+
+  // Debug logging
+  useEffect(() => {
+    console.log('UserMenu - User data:', user);
+    console.log('UserMenu - Error:', error);
+    console.log('UserMenu - IsLoading:', isLoading);
+  }, [user, error, isLoading]);
+
+  // Force revalidation on mount and listen for storage/focus events
+  useEffect(() => {
+    // Immediately revalidate on mount
+    mutateUser();
+    
+    const handleStorageChange = () => {
+      mutateUser();
+    };
+    
+    const handleFocus = () => {
+      mutateUser();
+    };
+    
+    // Listen for storage changes (cross-tab login)
+    window.addEventListener('storage', handleStorageChange);
+    // Listen for window focus (user might have logged in)
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [mutateUser]);
 
   async function handleSignOut() {
     await signOut();
@@ -34,7 +73,18 @@ function UserMenu() {
     router.push('/');
   }
 
-  if (!user) {
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex items-center space-x-4">
+        <div className="h-9 w-20 bg-secondary/30 rounded-xl animate-pulse"></div>
+        <div className="h-9 w-20 bg-secondary/30 rounded-xl animate-pulse"></div>
+      </div>
+    );
+  }
+
+  // If there's an error or user is null/undefined (not logged in)
+  if (error || !user) {
     return (
       <div className="flex items-center space-x-4">
         <Button asChild variant="outline" className="rounded-full">
@@ -90,7 +140,12 @@ export default function Header() {
           <span className="ml-2 text-xl font-semibold text-foreground">{siteConfig.name}</span>
         </Link>
         <div className="flex items-center space-x-4">
-          <Suspense fallback={<div className="h-9" />}>
+          <Suspense fallback={
+            <div className="flex items-center space-x-3">
+              <div className="h-9 w-20 bg-secondary/30 rounded-xl animate-pulse"></div>
+              <div className="h-9 w-20 bg-secondary/30 rounded-xl animate-pulse"></div>
+            </div>
+          }>
             <UserMenu />
           </Suspense>
         </div>
