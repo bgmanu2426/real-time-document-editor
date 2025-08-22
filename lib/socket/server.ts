@@ -30,11 +30,6 @@ export class CollaborativeSocketServer {
     this.io = new SocketIOServer(httpServer, {
       cors: {
         origin: [
-          "http://localhost:3000",
-          "https://localhost:3000",
-          "http://127.0.0.1:3000",
-          "https://127.0.0.1:3000",
-          /.*\.clackypaas\.com$/,  // Match any subdomain of clackypaas.com
           process.env.BASE_URL || "http://localhost:3000"
         ].filter(Boolean), // Remove any undefined values
         methods: ["GET", "POST"],
@@ -45,16 +40,15 @@ export class CollaborativeSocketServer {
       allowEIO3: true  // Allow Engine.IO v3 clients
     });
 
-    // Initialize Redis clients
-    const redisConfig = {
-      host: process.env.REDIS_HOST || '127.0.0.1',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD
-    };
+    // Initialize Redis clients with TLS support for Upstash
+    const redisUrl = `rediss://:${process.env.REDIS_PASSWORD}@${process.env.REDIS_HOST}:${process.env.REDIS_PORT || '6379'}`;
 
-    this.redisClient = createClient(redisConfig);
-    this.redisPub = createClient(redisConfig);
-    this.redisSub = createClient(redisConfig);
+    // Using only the URL with rediss:// protocol which handles TLS automatically
+    const redisOptions = { url: redisUrl };
+    
+    this.redisClient = createClient(redisOptions);
+    this.redisPub = createClient(redisOptions);
+    this.redisSub = createClient(redisOptions);
 
     this.initializeRedis();
     this.setupSocketHandlers();
@@ -79,7 +73,7 @@ export class CollaborativeSocketServer {
       // Authentication middleware
       socket.on('authenticate', async (data: { userId: string; username: string }) => {
         console.log('🔐 User authenticated:', data.username, 'Socket:', socket.id);
-        
+
         socket.data = {
           userId: data.userId,
           username: data.username
@@ -96,7 +90,7 @@ export class CollaborativeSocketServer {
           hasAuth: !!socket.data?.userId,
           userId: socket.data?.userId
         });
-        
+
         if (!socket.data?.userId) {
           console.log('❌ Join document failed: Not authenticated');
           socket.emit('error', { message: 'Not authenticated' });
@@ -119,7 +113,7 @@ export class CollaborativeSocketServer {
         });
 
         await this.addUserToDocument(documentId, user);
-        
+
         // Notify others about new user
         socket.to(`document:${documentId}`).emit('user-joined', user);
 
@@ -257,10 +251,10 @@ export class CollaborativeSocketServer {
       // Disconnect handling
       socket.on('disconnect', async () => {
         console.log('👤 User disconnected:', socket.id);
-        
+
         if (socket.data?.documentId && socket.data?.userId) {
           await this.removeUserFromDocument(socket.data.documentId, socket.data.userId);
-          
+
           socket.to(`document:${socket.data.documentId}`).emit('user-left', {
             userId: socket.data.userId
           });
@@ -309,13 +303,13 @@ export class CollaborativeSocketServer {
   ): Promise<any> {
     // Get operations since client version
     const serverOperations = await this.getOperationsSince(documentId, clientVersion);
-    
+
     // Transform the client operation against server operations
     let transformedOp = operation;
     for (const serverOp of serverOperations) {
       transformedOp = this.operationalTransform(transformedOp, serverOp);
     }
-    
+
     return transformedOp;
   }
 
@@ -333,7 +327,7 @@ export class CollaborativeSocketServer {
         };
       }
     }
-    
+
     if (clientOp.type === 'delete' && serverOp.type === 'insert') {
       if (clientOp.position <= serverOp.position) {
         return clientOp;
@@ -344,7 +338,7 @@ export class CollaborativeSocketServer {
         };
       }
     }
-    
+
     // Handle other transformation cases
     return clientOp;
   }
@@ -355,7 +349,7 @@ export class CollaborativeSocketServer {
       ...operation,
       timestamp: Date.now()
     };
-    
+
     await this.redisClient.lPush(key, JSON.stringify(operationData));
     await this.redisClient.expire(key, 86400); // 24 hours TTL
   }
@@ -363,7 +357,7 @@ export class CollaborativeSocketServer {
   private async getOperationsSince(documentId: string, version: number): Promise<any[]> {
     const key = `document:${documentId}:operations`;
     const operations = await this.redisClient.lRange(key, 0, -1);
-    
+
     return operations
       .map(op => JSON.parse(op))
       .filter(op => op.version > version)
@@ -388,7 +382,7 @@ export class CollaborativeSocketServer {
 
     const key = `document:${documentId}:branches`;
     await this.redisClient.hSet(key, branchName, JSON.stringify(branch));
-    
+
     return branch;
   }
 
@@ -422,12 +416,12 @@ export class CollaborativeSocketServer {
         title,
         updatedAt: Date.now()
       };
-      
+
       await this.redisClient.hSet(key, 'title', JSON.stringify(metadata));
       await this.redisClient.expire(key, 86400); // 24 hour TTL
-      
+
       console.log('✅ Document title cached in Redis for real-time sync:', { documentId, title });
-      
+
       // Note: Database persistence is handled by the fallback API call in the client
       // This ensures real-time sync while maintaining data persistence
     } catch (error) {
