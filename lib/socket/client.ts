@@ -80,7 +80,6 @@ export class CollaborativeSocketClient {
   private initializeSocket() {
     if (typeof window === 'undefined') return; // Server-side check
 
-    // Use the current window location origin for Clacky environment compatibility
     const baseUrl = typeof window !== 'undefined' 
       ? window.location.origin 
       : (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000');
@@ -102,7 +101,6 @@ export class CollaborativeSocketClient {
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      maxReconnectionAttempts: 5,
       withCredentials: true,
       autoConnect: true
     });
@@ -124,12 +122,12 @@ export class CollaborativeSocketClient {
       this.isAuthenticated = false;
     });
 
-    this.socket.on('connect_error', (error) => {
+    this.socket.on('connect_error', (error: Error) => {
       console.error('🔥 Socket.IO connection error:', error.message);
       console.error('🔥 Error details:', {
-        description: error.description,
-        context: error.context,
-        type: error.type
+        message: error.message,
+        name: error.name,
+        stack: error.stack
       });
     });
 
