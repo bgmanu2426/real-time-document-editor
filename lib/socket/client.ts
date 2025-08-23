@@ -95,14 +95,17 @@ export class CollaborativeSocketClient {
       transports: ['websocket', 'polling'],
       upgrade: true,
       rememberUpgrade: true,
-      timeout: 20000,
+      timeout: 30000, // Increase timeout for production
       forceNew: false,
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10, // Increase reconnection attempts
       reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
+      reconnectionDelayMax: 10000, // Increase max delay
       withCredentials: true,
-      autoConnect: true
+      autoConnect: true,
+      // Additional production-friendly options
+      randomizationFactor: 0.5,
+      forceBase64: false
     });
 
     console.log('✅ SOCKET INIT: Socket instance created successfully');

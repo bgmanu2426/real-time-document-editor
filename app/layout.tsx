@@ -1,6 +1,6 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
-import { Manrope } from 'next/font/google';
+// import { Manrope } from 'next/font/google';
 import { getUser } from '@/lib/db/queries';
 import { SWRConfig } from 'swr';
 import Header from '@/components/header';
@@ -16,7 +16,7 @@ export const viewport: Viewport = {
   maximumScale: 1
 };
 
-const manrope = Manrope({ subsets: ['latin'] });
+// const manrope = Manrope({ subsets: ['latin'] });
 
 export default function RootLayout({
   children
@@ -26,7 +26,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${manrope.className}`}
+      className={`font-sans`}
     >
       <body className="min-h-[100dvh] bg-background text-foreground">
         <ThemeProvider>
