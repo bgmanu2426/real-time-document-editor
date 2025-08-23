@@ -147,7 +147,7 @@ graph TB
 
 ## 🚀 Quick Start
 
-> **Prerequisites:** Node.js 18+, PostgreSQL, Redis, and pnpm/npm
+> **Prerequisites:** Node.js 18+, PostgreSQL, Redis (optional), and pnpm/npm
 
 ### 1️⃣ Clone & Install
 
@@ -182,7 +182,7 @@ BASE_URL=http://localhost:3000
 AUTH_SECRET=your-super-secret-jwt-key-min-32-chars
 NODE_ENV=development
 
-# Redis Configuration
+# Redis Configuration (Optional - app works without Redis)
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
 REDIS_PASSWORD=your-redis-password
@@ -192,6 +192,43 @@ WEBHOOK_URL=your-webhook-endpoint
 ```
 
 ### 3️⃣ Database Setup
+
+```bash
+# Initialize database and generate schema
+pnpm db:setup
+
+# Or run steps manually
+pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
+```
+
+### 4️⃣ Start Development
+
+```bash
+# Start development server with hot reload
+pnpm dev
+
+# The app will be available at http://localhost:3000
+```
+
+### 5️⃣ Production Deployment
+
+```bash
+# Build the application
+pnpm build
+
+# Start production server
+pnpm start
+```
+
+**Important Notes for Production:**
+- Socket.IO now works consistently in both dev and production modes
+- Redis connection failures are handled gracefully with automatic retries
+- The app will continue to work without Redis (with reduced collaborative features)
+- Increased timeouts and retry logic for better production reliability
+
+### 6️⃣ First Steps
 
 ```bash
 # Create database
@@ -314,11 +351,54 @@ pnpm format           # Format with Prettier
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
 | `POSTGRES_URL` | PostgreSQL connection string | ✅ | - |
-| `REDIS_HOST` | Redis server host | ✅ | `127.0.0.1` |
-| `REDIS_PORT` | Redis server port | ✅ | `6379` |
+| `REDIS_HOST` | Redis server host | ⚠️ | `127.0.0.1` |
+| `REDIS_PORT` | Redis server port | ⚠️ | `6379` |
+| `REDIS_PASSWORD` | Redis server password | ⚠️ | - |
 | `AUTH_SECRET` | JWT signing secret (32+ chars) | ✅ | - |
 | `BASE_URL` | Application base URL | ✅ | `http://localhost:3000` |
 | `NODE_ENV` | Environment mode | ✅ | `development` |
+
+⚠️ **Redis is optional** - The application will work without Redis but with reduced collaborative features.
+
+### 🔍 Troubleshooting
+
+#### Socket.IO Connection Issues
+
+**Problem**: Socket.IO timeouts in production mode
+**Solution**: ✅ Fixed! The app now uses consistent server configuration in both dev and production.
+
+**Problem**: "Connection timeout" errors
+**Solutions**:
+- Check that `BASE_URL` environment variable matches your deployment URL
+- Ensure the server is running on the correct port
+- Verify WebSocket support is enabled in your hosting environment
+
+#### Redis Connection Issues
+
+**Problem**: Redis connection failures
+**Solution**: ✅ The app now handles Redis failures gracefully:
+- Automatic retry logic (5 attempts with exponential backoff)
+- Graceful fallback when Redis is unavailable
+- Real-time features work without Redis (with some limitations)
+
+**Problem**: TLS/SSL errors with cloud Redis
+**Solution**: The app auto-detects Redis configuration:
+- Uses `rediss://` protocol for cloud Redis with TLS
+- Uses standard connection for local Redis
+- Handles authentication automatically
+
+#### Testing Socket.IO
+
+Visit `/socket-test` in your browser to test Socket.IO connectivity:
+- Real-time connection status
+- Debug logs and error messages
+- Authentication testing
+
+```bash
+# Test Socket.IO endpoint directly
+curl -I http://localhost:3000/socket.io/
+# Should return HTTP 400 (expected for direct HTTP access)
+```
 
 ---
 
