@@ -25,6 +25,7 @@ export class CollaborativeSocketServer {
   private redisClient;
   private redisPub;
   private redisSub;
+  private redisConnected: boolean = false;
 
   constructor(httpServer: HTTPServer) {
     this.io = new SocketIOServer(httpServer, {
@@ -36,31 +37,113 @@ export class CollaborativeSocketServer {
         credentials: true
       },
       transports: ['websocket', 'polling'],
-      allowEIO3: true  // Allow Engine.IO v3 clients
+      allowEIO3: true,  // Allow Engine.IO v3 clients
+      pingTimeout: 60000, // Increase ping timeout for production
+      pingInterval: 25000, // Increase ping interval for production
+      connectTimeout: 45000, // Increase connection timeout for production
+      upgradeTimeout: 30000 // Increase upgrade timeout for production
     });
 
-    // Initialize Redis clients with TLS support for Upstash
-    const redisUrl = `rediss://:${process.env.REDIS_PASSWORD}@${process.env.REDIS_HOST}:${process.env.REDIS_PORT || '6379'}`;
-
-    // Using only the URL with rediss:// protocol which handles TLS automatically
-    const redisOptions = { url: redisUrl };
+    // Initialize Redis clients with better error handling and timeouts
+    const redisHost = process.env.REDIS_HOST || 'localhost';
+    const redisPort = process.env.REDIS_PORT || '6379';
+    const redisPassword = process.env.REDIS_PASSWORD;
+    
+    let redisOptions: any;
+    
+    if (redisPassword && redisHost !== 'localhost') {
+      // Production environment with TLS (like Upstash)
+      const redisUrl = `rediss://:${redisPassword}@${redisHost}:${redisPort}`;
+      redisOptions = { 
+        url: redisUrl,
+        socket: {
+          connectTimeout: 10000,
+          lazyConnect: true,
+          reconnectDelay: 1000,
+          retryDelayOnFailover: 1000
+        },
+        retryDelayOnClusterDown: 1000,
+        retryDelayOnFailover: 1000,
+        maxRetriesPerRequest: 3
+      };
+    } else {
+      // Development environment or local Redis
+      redisOptions = {
+        socket: {
+          host: redisHost,
+          port: parseInt(redisPort),
+          connectTimeout: 10000,
+          lazyConnect: true,
+          reconnectDelay: 1000
+        },
+        retryDelayOnClusterDown: 1000,
+        retryDelayOnFailover: 1000,
+        maxRetriesPerRequest: 3
+      };
+      
+      if (redisPassword) {
+        redisOptions.password = redisPassword;
+      }
+    }
     
     this.redisClient = createClient(redisOptions);
     this.redisPub = createClient(redisOptions);
     this.redisSub = createClient(redisOptions);
+
+    // Add error handlers before connecting
+    this.redisClient.on('error', (err) => {
+      console.error('❌ Redis Client Error:', err);
+    });
+    
+    this.redisPub.on('error', (err) => {
+      console.error('❌ Redis Pub Error:', err);
+    });
+    
+    this.redisSub.on('error', (err) => {
+      console.error('❌ Redis Sub Error:', err);
+    });
 
     this.initializeRedis();
     this.setupSocketHandlers();
   }
 
   private async initializeRedis() {
-    try {
-      await this.redisClient.connect();
-      await this.redisPub.connect();
-      await this.redisSub.connect();
-      console.log('✅ Redis connected successfully');
-    } catch (error) {
-      console.error('❌ Redis connection failed:', error);
+    const maxRetries = 5;
+    const retryDelay = 2000; // 2 seconds
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`🔄 Attempting to connect to Redis (attempt ${attempt}/${maxRetries})...`);
+        
+        await Promise.all([
+          this.redisClient.connect(),
+          this.redisPub.connect(),
+          this.redisSub.connect()
+        ]);
+        
+        console.log('✅ Redis connected successfully');
+        
+        // Test the connection
+        await this.redisClient.ping();
+        console.log('✅ Redis ping successful');
+        
+        this.redisConnected = true;
+        return; // Success, exit the retry loop
+        
+      } catch (error) {
+        console.error(`❌ Redis connection attempt ${attempt} failed:`, error);
+        
+        if (attempt === maxRetries) {
+          console.error('❌ All Redis connection attempts failed. Continuing without Redis...');
+          // Don't throw error - allow the application to start without Redis
+          // In production, you might want to implement fallback behavior
+          return;
+        }
+        
+        // Wait before retrying
+        console.log(`⏳ Waiting ${retryDelay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+      }
     }
   }
 
@@ -262,22 +345,44 @@ export class CollaborativeSocketServer {
     });
   }
 
+  // Helper method to safely execute Redis operations
+  private async safeRedisOperation<T>(operation: () => Promise<T>, fallback: T): Promise<T> {
+    if (!this.redisConnected) {
+      console.warn('⚠️ Redis not connected, using fallback behavior');
+      return fallback;
+    }
+    
+    try {
+      return await operation();
+    } catch (error) {
+      console.error('❌ Redis operation failed:', error);
+      this.redisConnected = false;
+      return fallback;
+    }
+  }
+
   // Document presence management
   private async addUserToDocument(documentId: string, user: DocumentUser) {
     const key = `document:${documentId}:users`;
-    await this.redisClient.hSet(key, user.userId, JSON.stringify(user));
-    await this.redisClient.expire(key, 3600); // 1 hour TTL
+    await this.safeRedisOperation(async () => {
+      await this.redisClient.hSet(key, user.userId, JSON.stringify(user));
+      await this.redisClient.expire(key, 3600); // 1 hour TTL
+    }, undefined);
   }
 
   private async removeUserFromDocument(documentId: string, userId: string) {
     const key = `document:${documentId}:users`;
-    await this.redisClient.hDel(key, userId);
+    await this.safeRedisOperation(async () => {
+      await this.redisClient.hDel(key, userId);
+    }, undefined);
   }
 
   private async getDocumentUsers(documentId: string): Promise<DocumentUser[]> {
     const key = `document:${documentId}:users`;
-    const users = await this.redisClient.hGetAll(key);
-    return Object.values(users).map(user => JSON.parse(user));
+    return await this.safeRedisOperation(async () => {
+      const users = await this.redisClient.hGetAll(key);
+      return Object.values(users).map(user => JSON.parse(user));
+    }, []); // Return empty array as fallback
   }
 
   private async updateUserCursor(
@@ -286,12 +391,14 @@ export class CollaborativeSocketServer {
     cursor: { position: number; selection?: { start: number; end: number }; domPosition?: { top: number; left: number; height: number }; relativePosition?: { top: number; left: number; height: number; contentOffsetTop?: number; contentOffsetLeft?: number; scrollTop?: number; scrollLeft?: number } }
   ) {
     const key = `document:${documentId}:users`;
-    const userStr = await this.redisClient.hGet(key, userId);
-    if (userStr) {
-      const user: DocumentUser = JSON.parse(userStr);
-      user.cursor = cursor;
-      await this.redisClient.hSet(key, userId, JSON.stringify(user));
-    }
+    await this.safeRedisOperation(async () => {
+      const userStr = await this.redisClient.hGet(key, userId);
+      if (userStr) {
+        const user: DocumentUser = JSON.parse(userStr);
+        user.cursor = cursor;
+        await this.redisClient.hSet(key, userId, JSON.stringify(user));
+      }
+    }, undefined);
   }
 
   // Operational Transform implementation
@@ -349,18 +456,21 @@ export class CollaborativeSocketServer {
       timestamp: Date.now()
     };
 
-    await this.redisClient.lPush(key, JSON.stringify(operationData));
-    await this.redisClient.expire(key, 86400); // 24 hours TTL
+    await this.safeRedisOperation(async () => {
+      await this.redisClient.lPush(key, JSON.stringify(operationData));
+      await this.redisClient.expire(key, 86400); // 24 hours TTL
+    }, undefined);
   }
 
   private async getOperationsSince(documentId: string, version: number): Promise<any[]> {
     const key = `document:${documentId}:operations`;
-    const operations = await this.redisClient.lRange(key, 0, -1);
-
-    return operations
-      .map(op => JSON.parse(op))
-      .filter(op => op.version > version)
-      .sort((a, b) => a.timestamp - b.timestamp);
+    return await this.safeRedisOperation(async () => {
+      const operations = await this.redisClient.lRange(key, 0, -1);
+      return operations
+        .map(op => JSON.parse(op))
+        .filter(op => op.version > version)
+        .sort((a, b) => a.timestamp - b.timestamp);
+    }, []); // Return empty array as fallback
   }
 
   // Version control methods
@@ -380,7 +490,9 @@ export class CollaborativeSocketServer {
     };
 
     const key = `document:${documentId}:branches`;
-    await this.redisClient.hSet(key, branchName, JSON.stringify(branch));
+    await this.safeRedisOperation(async () => {
+      await this.redisClient.hSet(key, branchName, JSON.stringify(branch));
+    }, undefined);
 
     return branch;
   }
@@ -416,8 +528,10 @@ export class CollaborativeSocketServer {
         updatedAt: Date.now()
       };
 
-      await this.redisClient.hSet(key, 'title', JSON.stringify(metadata));
-      await this.redisClient.expire(key, 86400); // 24 hour TTL
+      await this.safeRedisOperation(async () => {
+        await this.redisClient.hSet(key, 'title', JSON.stringify(metadata));
+        await this.redisClient.expire(key, 86400); // 24 hour TTL
+      }, undefined);
 
       console.log('✅ Document title cached in Redis for real-time sync:', { documentId, title });
 
